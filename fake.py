@@ -3,10 +3,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 
 def scrape_npr_tech_news(url, output_file='npr_tech_news.xlsx'):
-    """
-    Scrape article titles and teasers from NPR's Technology section.
-    """
-    
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'

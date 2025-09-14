@@ -1,5 +1,4 @@
-import sys
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QPushButton, QLineEdit, QFrame)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
@@ -311,20 +310,4 @@ class SereniTruthApp(QMainWindow):
         self.status_text.setText("The article was safe\nand trusted.")
         self.article_display.setText("TRUSTED ARTICLE!\nArticle content will show here...")
 
-def main():
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')
-    window = SereniTruthApp()
-    window.show()
-    
-    # Center the window on screen
-    screen = app.primaryScreen().availableGeometry()
-    window.move(
-        (screen.width() - window.width()) // 2,
-        (screen.height() - window.height()) // 2
-    )
-    
-    sys.exit(app.exec_())
 
-if __name__ == '__main__':
-    main()

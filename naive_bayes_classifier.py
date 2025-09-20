@@ -5,6 +5,7 @@ import os
 from collections import defaultdict, Counter
 import pandas as pd
 import joblib
+import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 
 class NaiveBayesClassifier:
@@ -32,8 +33,9 @@ class NaiveBayesClassifier:
         
         # Find negation phrases
         for pattern in negation_patterns:
-            matches = re.finditer(pattern, text)
-            for match in matches:
+            matches = list(re.finditer(pattern, text))
+            # Process matches in reverse order to avoid position shifts
+            for match in reversed(matches):
                 # Find the next punctuation after the negation
                 punctuation_match = re.search(r"[.,!?;:]", text[match.end():])
                 if punctuation_match:
@@ -43,7 +45,7 @@ class NaiveBayesClassifier:
                 
                 # Add NOT_ prefix to all words between negation and punctuation
                 words_to_negate = text[match.end():end_pos].split()
-                negated_words = ["NOT_" + word for word in words_to_negate]
+                negated_words = ["NOT_" + word for word in words_to_negate if word.strip()]
                 text = text[:match.end()] + " " + " ".join(negated_words) + text[end_pos:]
         
         # Remove special characters and digits, keep only words
@@ -52,7 +54,7 @@ class NaiveBayesClassifier:
         # Tokenize
         tokens = text.split()
         
-        return tokens
+        return [token for token in tokens if token.strip()]
     
     def train(self, documents, labels):
         """Train the Naive Bayes classifier"""
@@ -77,13 +79,16 @@ class NaiveBayesClassifier:
         for doc, label in zip(documents, labels):
             if self.use_ngrams:
                 # Use vectorizer for n-grams
-                bow = self.vectorizer.transform([doc]).toarray()[0]
-                feature_names = self.vectorizer.get_feature_names_out()
-                for i, count in enumerate(bow):
-                    if count > 0:
-                        word = feature_names[i]
-                        word_counts[label][word] += count
-                        self.vocab.add(word)
+                try:
+                    bow = self.vectorizer.transform([doc]).toarray()[0]
+                    feature_names = self.vectorizer.get_feature_names_out()
+                    for i, count in enumerate(bow):
+                        if count > 0:
+                            word = feature_names[i]
+                            word_counts[label][word] += count
+                            self.vocab.add(word)
+                except:
+                    continue
             else:
                 # Use traditional tokenization
                 tokens = self.preprocess_text(doc)
@@ -111,12 +116,19 @@ class NaiveBayesClassifier:
         """Predict the class of a document"""
         if not self.is_trained:
             raise ValueError("Classifier not trained. Please train first.")
+        
+        # Handle invalid/empty documents
+        if document is None or pd.isna(document) or not isinstance(document, str) or document.strip() == '':
+            return 0, {0: 0.5, 1: 0.5}
             
         if self.use_ngrams:
             # Use vectorizer for n-grams
-            bow = self.vectorizer.transform([document]).toarray()[0]
-            feature_names = self.vectorizer.get_feature_names_out()
-            tokens = [feature_names[i] for i, count in enumerate(bow) if count > 0]
+            try:
+                bow = self.vectorizer.transform([document]).toarray()[0]
+                feature_names = self.vectorizer.get_feature_names_out()
+                tokens = [feature_names[i] for i, count in enumerate(bow) if count > 0]
+            except:
+                tokens = []
         else:
             # Use traditional tokenization
             tokens = self.preprocess_text(document)
@@ -136,8 +148,13 @@ class NaiveBayesClassifier:
                     # Handle unknown words with Laplace smoothing
                     vocab_size = len(self.vocab)
                     total_words_in_class = sum(sum(self.word_likelihoods[label].values()) for label in self.word_likelihoods)
-                    unknown_prob = self.alpha / (total_words_in_class + self.alpha * vocab_size)
-                    log_probs[label] += math.log(unknown_prob)
+                    if total_words_in_class > 0:
+                        unknown_prob = self.alpha / (total_words_in_class + self.alpha * vocab_size)
+                        if unknown_prob > 0:
+                            log_probs[label] += math.log(unknown_prob)
+        
+        if not log_probs:
+            return 0, {0: 0.5, 1: 0.5}
         
         # Find the class with the highest probability
         predicted_class = max(log_probs.items(), key=lambda x: x[1])[0]
@@ -188,6 +205,13 @@ def load_training_data(csv_filepath, text_column="text", label_column="label", m
     # Return documents and labels
     return df[text_column].tolist(), df[label_column].tolist()
 
+# Helper function to safely get text content
+def safe_get_text(value):
+    """Safely convert any value to a string, handling NaN and None"""
+    if value is None or pd.isna(value) or (isinstance(value, float) and np.isnan(value)):
+        return ""
+    return str(value).strip()
+
 # Function to integrate with the main application
 def detect_fake_news_with_nb(articles_data, model_path="models/naive_bayes_classifier.pkl", use_ngrams=True):
     """Detect fake news using Naive Bayes classifier"""
@@ -225,14 +249,37 @@ def detect_fake_news_with_nb(articles_data, model_path="models/naive_bayes_class
             return articles_data
     
     # Analyze each article
+    analyzed_count = 0
+    failed_count = 0
+    
     for article in articles_data:
         # Use full content if available, otherwise use title and teaser
-        if 'Full Content' in article and article['Full Content']:
-            text = article['Full Content']
-        elif 'Content Paragraphs' in article and article['Content Paragraphs']:
-            text = article['Content Paragraphs']
-        else:
-            text = article['Title'] + ' ' + article.get('Teaser', '')
+        text_parts = []
+        
+        # Try different text fields with safe extraction
+        text_fields = [
+            'Full Content', 'Content Paragraphs', 'text', 
+            'Title', 'title', 'Teaser'
+        ]
+        
+        for field in text_fields:
+            if field in article:
+                text_content = safe_get_text(article[field])
+                if text_content and len(text_content.strip()) > 0:
+                    text_parts.append(text_content)
+        
+        # Combine all available text
+        text = ' '.join(text_parts).strip()
+        
+        if not text or len(text) < 5:
+            # Add default values for empty articles
+            article['Prediction'] = 'Unknown'
+            article['Fake_Probability'] = 0.5
+            article['Real_Probability'] = 0.5
+            article['Confidence'] = 0.5
+            article['Fake_News_Label'] = '❓ NO CONTENT TO ANALYZE'
+            failed_count += 1
+            continue
         
         try:
             prediction, probabilities = classifier.predict(text)
@@ -248,6 +295,8 @@ def detect_fake_news_with_nb(articles_data, model_path="models/naive_bayes_class
                 article['Fake_News_Label'] = '⚠️ POTENTIALLY FAKE'
             else:
                 article['Fake_News_Label'] = '✅ LIKELY REAL'
+            
+            analyzed_count += 1
                 
         except Exception as e:
             print(f"❌ Error predicting article: {e}")
@@ -257,6 +306,10 @@ def detect_fake_news_with_nb(articles_data, model_path="models/naive_bayes_class
             article['Real_Probability'] = 0.5
             article['Confidence'] = 0.5
             article['Fake_News_Label'] = '❓ ANALYSIS FAILED'
+            failed_count += 1
     
-    print(f"✅ Successfully analyzed {len(articles_data)} articles with Enhanced Naive Bayes")
+    print(f"✅ Successfully analyzed {analyzed_count}/{len(articles_data)} articles with Enhanced Naive Bayes")
+    if failed_count > 0:
+        print(f"⚠️ {failed_count} articles had no content or failed analysis")
+    
     return articles_data

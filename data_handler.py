@@ -33,7 +33,7 @@ def save_to_excel(data, output_file):
         print("❌ No articles were found. The website structure may have changed.")
         return False
 
-def load_csv_data(file_path, max_articles=100):
+def load_csv_data(file_path, max_articles=500):
     """Load data from CSV file (WELFake_Dataset format) with limit"""
     try:
         if os.path.exists(file_path):

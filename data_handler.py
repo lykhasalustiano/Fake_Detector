@@ -13,7 +13,6 @@ def save_to_excel(data, output_file):
             'Content Paragraphs', 'Full Content', 'Image URLs', 'Label'
         ]
         
-        # Only include columns that actually exist in the data
         existing_columns = [col for col in column_order if col in df.columns]
         # Add any remaining columns not in the predefined order
         for col in df.columns:
@@ -40,6 +39,14 @@ def load_csv_data(file_path, max_articles=100):
             df = pd.read_csv(file_path)
             print(f"✅ Loaded {len(df)} articles from {os.path.basename(file_path)}")
             
+            # Filter out rows with empty or invalid titles
+            df = df.dropna(subset=['title'])
+            df = df[df['title'].str.strip() != '']
+            df = df[df['title'] != 'No title']
+            df = df[df['title'] != 'No title found']
+            
+            print(f"📊 After filtering: {len(df)} valid articles")
+            
             # Limit to max_articles (random sample to get variety)
             if len(df) > max_articles:
                 df = df.sample(n=max_articles, random_state=42)  # random_state for reproducibility
@@ -48,9 +55,13 @@ def load_csv_data(file_path, max_articles=100):
             # Convert CSV data to the same format as scraped articles
             articles = []
             for _, row in df.iterrows():
+                title = str(row.get('title', 'No title')).strip()
+                if not title or title == 'No title' or title == '':
+                    continue  # Skip articles with no title
+                    
                 article = {
                     'Source': 'WELFake_Dataset',
-                    'Title': str(row.get('title', 'No title')),
+                    'Title': title,
                     'Teaser': str(row.get('text', 'No content'))[:200] + "...",
                     'Published Date': 'N/A',
                     'Author': 'Unknown',

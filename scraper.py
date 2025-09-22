@@ -50,6 +50,7 @@ def fetch_page_content(url, max_retries=3):
                 print(f"Failed after {max_retries} attempts")
                 return None
 
+# In scraper.py, modify the parse_npr_articles function
 def parse_npr_articles(html_content, base_url="https://www.npr.org"):
     """Parse NPR HTML content and extract article information"""
     if not html_content:
@@ -74,7 +75,12 @@ def parse_npr_articles(html_content, base_url="https://www.npr.org"):
             # Extract title
             title_elem = container.find('h2', class_='title') or container.find('h3', class_='title') or \
                         container.find('h2') or container.find('h3') or container.find('h1')
-            title = title_elem.get_text(strip=True) if title_elem else "No title found"
+            title = title_elem.get_text(strip=True) if title_elem else None
+            
+            # Skip articles with no title or invalid titles
+            if not title or title == "No title found" or title.strip() == '':
+                print(f"⚠️ Skipping article with no title")
+                continue
             
             # Extract article URL
             link_elem = container.find('a', href=True)
@@ -111,6 +117,7 @@ def parse_npr_articles(html_content, base_url="https://www.npr.org"):
             print(f"  Error processing an NPR article: {e}")
             continue
     
+    print(f"✅ Successfully parsed {len(data)} valid articles from NPR")
     return data
 
 def parse_articles(html_content, source, base_url=None):
@@ -256,7 +263,6 @@ def enhanced_parse_articles(html_content, source, get_full_content=True, base_ur
                 
                 # Update progress
                 print(f"Fetched {i+1}/{len(basic_data)} articles from {source} - {article['Title']}")
-                # Be respectful with delays between requests
                 time.sleep(1)  # Increased delay to avoid being blocked
     
     return basic_data

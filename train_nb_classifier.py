@@ -28,7 +28,7 @@ def main():
             csv_path, 
             text_column="text",  # Using text content for training
             label_column="label",
-            max_samples=5000  # Use more samples for better accuracy
+            max_samples= 1000  # Use more samples for better accuracy
         )
         
         print(f"Loaded {len(documents)} samples for training")

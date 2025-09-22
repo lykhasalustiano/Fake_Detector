@@ -1,5 +1,24 @@
-import sys
+# Add these lines at the VERY TOP of the file
 import os
+os.environ["PYTHONWARNINGS"] = "ignore::UserWarning"
+
+# Force numpy to load before any other imports
+try:
+    import numpy as np
+    # Check numpy version and force compatibility
+    if hasattr(np, '__version__'):
+        print(f"Using NumPy version: {np.__version__}")
+except ImportError:
+    print("NumPy not installed. Please run: pip install numpy==1.24.3")
+    exit(1)
+
+# Now suppress warnings
+import warnings
+warnings.filterwarnings("ignore", message="numpy.dtype size changed")
+warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
+warnings.filterwarnings("ignore", category=UserWarning)
+
+import sys
 import pandas as pd
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -65,15 +84,59 @@ def main():
         else:
             print("❌ Failed to fetch content from NPR.")
     
-    # Run fake news detection on all loaded articles
+    # Enhanced filtering: Remove articles with no title or invalid titles
+    valid_articles = []
+    invalid_count = 0
+    
+    for article in articles_data:
+        title = article.get('Title', '')
+        # Check for various invalid title conditions
+        if (title and 
+            title != 'No title' and 
+            title != 'No title found' and 
+            title.strip() != '' and
+            title != 'Title not found' and
+            title != 'Access Denied' and
+            title != 'Error retrieving title'):
+            valid_articles.append(article)
+        else:
+            invalid_count += 1
+            print(f"⚠️ Skipping article with invalid title: '{title}'")
+    
+    articles_data = valid_articles
+    print(f"✅ Filtered to {len(articles_data)} valid articles (removed {invalid_count} invalid)")
+    
+    # Run fake news detection on all loaded articles - with enhanced error handling
     try:
+        # Import numpy first with error suppression (redundant but safe)
+        import numpy as np
+        import warnings
+        warnings.filterwarnings("ignore", message="numpy.dtype size changed")
+        warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
+        
         from naive_bayes_classifier import detect_fake_news_with_nb
         articles_data = detect_fake_news_with_nb(articles_data)
+        print("✅ Fake news detection completed successfully")
+    except ImportError as e:
+        print(f"❌ Required packages not installed: {e}")
+        print("Please run: pip install numpy scikit-learn pandas joblib")
+        for article in articles_data:
+            article['Fake_News_Label'] = '❓ PACKAGE_ERROR'
+            article['Prediction'] = 'Error'
+            article['Fake_Probability'] = 0.5
+            article['Real_Probability'] = 0.5
+            article['Confidence'] = 0.5
     except Exception as e:
-        print(f"Error running fake news detection: {e}")
+        print(f"❌ Error running fake news detection: {e}")
+        import traceback
+        traceback.print_exc()
         # Set default status for articles if detection fails
         for article in articles_data:
-            article['Fake_News_Label'] = '❓ UNKNOWN'
+            article['Fake_News_Label'] = '❓ ANALYSIS_ERROR'
+            article['Prediction'] = 'Unknown'
+            article['Fake_Probability'] = 0.5
+            article['Real_Probability'] = 0.5
+            article['Confidence'] = 0.5
     
     # Pass the data to the UI (using only NPR URL since CSV is loaded directly)
     window = SereniTruthApp(articles_data, [npr_tech_url], excel_files)
